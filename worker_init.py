@@ -1,53 +1,56 @@
-from transformers import AutoTokenizer, AutoModelForSequenceClassification
-import torch
 import os
+import numpy as np
+import onnxruntime as ort
+from transformers import AutoTokenizer
+from scipy.special import softmax
 from text_processing import detect_language, transliterate_if_romanized
 
-# Global variables to hold the model and tokenizer in each worker process
+# Global variables for the ONNX session and tokenizer
+global_session = None
 global_tokenizer = None
-global_model = None
 
 def init_worker():
     """
-    Initializer function for each worker process in the pool.
-    Loads the model and tokenizer into global variables.
+    Initializer for each worker process. Loads the ONNX model and tokenizer.
     """
-    global global_tokenizer, global_model
+    global global_session, global_tokenizer
 
-    model_dir = "./model"
-    if not os.path.exists(model_dir) or not os.listdir(model_dir):
-        # This check is important to avoid crashing workers if the model is missing.
-        # The main thread should handle the user-facing error.
-        print(f"Worker process {os.getpid()}: Model not found, cannot initialize.")
+    model_dir = "./onnx_model"
+    model_path = os.path.join(model_dir, "model_quantized.onnx")
+
+    if not os.path.exists(model_path):
+        print(f"Worker {os.getpid()}: ONNX model not found, cannot initialize.")
         return
 
-    print(f"Worker process {os.getpid()}: Initializing and loading model...")
+    print(f"Worker {os.getpid()}: Initializing ONNX session...")
+    global_session = ort.InferenceSession(model_path)
     global_tokenizer = AutoTokenizer.from_pretrained(model_dir)
-    global_model = AutoModelForSequenceClassification.from_pretrained(model_dir)
-    print(f"Worker process {os.getpid()}: Initialization complete.")
+    print(f"Worker {os.getpid()}: Initialization complete.")
 
 def analyze_text_worker(text: str) -> dict:
     """
-    The target function for each worker process.
-    Performs sentiment analysis on a single text using the pre-loaded global model.
+    Target function for worker processes to perform analysis using ONNX.
     """
-    global global_tokenizer, global_model
+    global global_session, global_tokenizer
 
-    if global_tokenizer is None or global_model is None:
-        return {"language": "unknown", "sentiment": "Worker not initialized; model not loaded."}
+    if global_session is None or global_tokenizer is None:
+        return {"language": "unknown", "sentiment": "Worker not initialized; ONNX model not loaded."}
 
-    # Detect language and transliterate if necessary
     lang = detect_language(text)
     processed_text = transliterate_if_romanized(text, lang)
 
-    # Perform sentiment analysis
-    inputs = global_tokenizer(processed_text, return_tensors="pt", truncation=True, padding=True, max_length=512)
-    with torch.no_grad():
-        outputs = global_model(**inputs)
+    # Tokenize input
+    inputs = global_tokenizer(processed_text, return_tensors="np", truncation=True, padding=True, max_length=512)
 
-    probabilities = torch.nn.functional.softmax(outputs.logits, dim=-1)
+    # Run inference with ONNX Runtime
+    ort_inputs = {k: v for k, v in inputs.items()}
+    ort_outputs = global_session.run(None, ort_inputs)
+
+    # Post-process the output
+    probabilities = softmax(ort_outputs[0][0])
+    prediction = np.argmax(probabilities)
+
     sentiment_map = {0: "Very Negative", 1: "Negative", 2: "Neutral", 3: "Positive", 4: "Very Positive"}
-    prediction = torch.argmax(probabilities, dim=-1).item()
-    sentiment = sentiment_map[prediction]
+    sentiment = sentiment_map[prediction.item()]
 
     return {"language": lang, "sentiment": sentiment}

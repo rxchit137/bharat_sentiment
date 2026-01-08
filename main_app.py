@@ -152,23 +152,27 @@ class BatchAnalysisTab(QWidget):
 class AnalysisModel:
     def __init__(self):
         self.tokenizer = None
-        self.model = None
+        self.session = None
         self._load_model()
 
     def _load_model(self):
-        from transformers import AutoTokenizer, AutoModelForSequenceClassification
         import os
-        model_dir = "./model"
-        if os.path.exists(model_dir) and os.listdir(model_dir):
+        import onnxruntime as ort
+        from transformers import AutoTokenizer
+
+        model_dir = "./onnx_model"
+        model_path = os.path.join(model_dir, "model_quantized.onnx")
+
+        if os.path.exists(model_path):
+            self.session = ort.InferenceSession(model_path)
             self.tokenizer = AutoTokenizer.from_pretrained(model_dir)
-            self.model = AutoModelForSequenceClassification.from_pretrained(model_dir)
         else:
-            print("Model not found. Single text analysis will not be available.")
+            print("ONNX model not found. Single text analysis will not be available.")
 
     def analyze(self, text: str) -> dict:
-        if not self.model or not self.tokenizer:
-            return {"language": "unknown", "sentiment": "Model not loaded."}
-        return analyze(text, self.tokenizer, self.model)
+        if not self.session or not self.tokenizer:
+            return {"language": "unknown", "sentiment": "ONNX model not loaded."}
+        return analyze(text, self.tokenizer, self.session)
 
 
 class SingleAnalysisTab(QWidget):

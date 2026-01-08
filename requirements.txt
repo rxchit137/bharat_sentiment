@@ -9,3 +9,6 @@ langdetect
 indic-transliteration
 scikit-learn
 pyqtgraph
+onnx
+onnxruntime
+optimum[onnxruntime]
