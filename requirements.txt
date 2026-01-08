@@ -1,0 +1,11 @@
+transformers
+torch
+PyInstaller
+datasets
+pandas
+openpyxl
+PySide6
+langdetect
+indic-transliteration
+scikit-learn
+pyqtgraph
