@@ -19,6 +19,6 @@ def analyze(text: str, tokenizer, session) -> dict:
     prediction = np.argmax(probabilities)
 
     sentiment_map = {0: "Very Negative", 1: "Negative", 2: "Neutral", 3: "Positive", 4: "Very Positive"}
-    sentiment = sentiment_map[prediction.item()]
+    sentiment = sentiment_map.get(prediction, "unknown")
 
     return {"language": lang, "sentiment": sentiment}

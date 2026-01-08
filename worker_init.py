@@ -4,6 +4,7 @@ import onnxruntime as ort
 from transformers import AutoTokenizer
 from scipy.special import softmax
 from text_processing import detect_language, transliterate_if_romanized
+from sentiment_logic import analyze
 
 # Global variables for the ONNX session and tokenizer
 global_session = None
@@ -36,21 +37,4 @@ def analyze_text_worker(text: str) -> dict:
     if global_session is None or global_tokenizer is None:
         return {"language": "unknown", "sentiment": "Worker not initialized; ONNX model not loaded."}
 
-    lang = detect_language(text)
-    processed_text = transliterate_if_romanized(text, lang)
-
-    # Tokenize input
-    inputs = global_tokenizer(processed_text, return_tensors="np", truncation=True, padding=True, max_length=512)
-
-    # Run inference with ONNX Runtime
-    ort_inputs = {k: v for k, v in inputs.items()}
-    ort_outputs = global_session.run(None, ort_inputs)
-
-    # Post-process the output
-    probabilities = softmax(ort_outputs[0][0])
-    prediction = np.argmax(probabilities)
-
-    sentiment_map = {0: "Very Negative", 1: "Negative", 2: "Neutral", 3: "Positive", 4: "Very Positive"}
-    sentiment = sentiment_map[prediction.item()]
-
-    return {"language": lang, "sentiment": sentiment}
+    return analyze(text, global_tokenizer, global_session)
