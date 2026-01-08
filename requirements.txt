@@ -12,3 +12,4 @@ pyqtgraph
 onnx
 onnxruntime
 optimum[onnxruntime]
+reportlab

@@ -14,6 +14,7 @@ from sentiment_logic import analyze
 from batch_handler import load_texts_from_file, generate_report, compare_reports
 from worker_init import init_worker, analyze_text_worker
 from visuals import create_sentiment_bar_chart, create_language_bar_chart, create_keywords_table
+from pdf_generator import generate_pdf_report
 
 class BatchProcessingThread(QThread):
     progress = Signal(int)
@@ -77,8 +78,13 @@ class BatchAnalysisTab(QWidget):
         self.column_label = QLabel("Enter the name of the column containing the text:")
         self.column_name_entry = QLineEdit()
 
-        # Action button
+        # Action buttons
         self.run_batch_button = QPushButton("Run Batch Analysis")
+        self.export_pdf_button = QPushButton("Export to PDF")
+        self.export_pdf_button.setEnabled(False)
+        action_layout = QHBoxLayout()
+        action_layout.addWidget(self.run_batch_button)
+        action_layout.addWidget(self.export_pdf_button)
 
         # Progress and results
         self.progress_bar = QProgressBar()
@@ -91,13 +97,16 @@ class BatchAnalysisTab(QWidget):
         layout.addLayout(file_layout)
         layout.addWidget(self.column_label)
         layout.addWidget(self.column_name_entry)
-        layout.addWidget(self.run_batch_button)
+        layout.addLayout(action_layout)
         layout.addWidget(self.progress_bar)
         layout.addWidget(self.results_label)
         layout.addWidget(self.results_widget)
 
+        self.report_path = None
+
         self.browse_button.clicked.connect(self.browse_file)
         self.run_batch_button.clicked.connect(self.run_batch_processing)
+        self.export_pdf_button.clicked.connect(self.export_to_pdf)
 
     def browse_file(self):
         filepath, _ = QFileDialog.getOpenFileName(self, "Select a File", "", "CSV files (*.csv);;Excel files (*.xlsx)")
@@ -115,6 +124,7 @@ class BatchAnalysisTab(QWidget):
         self.progress_bar.setValue(0)
         self.results_label.setText("Processing...")
         self.run_batch_button.setEnabled(False)
+        self.export_pdf_button.setEnabled(False)
 
         self.thread = BatchProcessingThread(filepath, text_column)
         self.thread.progress.connect(self.progress_bar.setValue)
@@ -123,6 +133,7 @@ class BatchAnalysisTab(QWidget):
         self.thread.start()
 
     def on_batch_finished(self, report_path):
+        self.report_path = report_path
         # Clear previous results
         for i in reversed(range(self.results_layout.count())):
             self.results_layout.itemAt(i).widget().setParent(None)
@@ -133,14 +144,43 @@ class BatchAnalysisTab(QWidget):
 
             # Display visualizations
             self.results_layout.addWidget(QLabel(f"Report for: {report_data['source_file']}"))
-            self.results_layout.addWidget(create_sentiment_bar_chart(report_data["overall_sentiment_counts"]))
-            self.results_layout.addWidget(create_language_bar_chart(report_data["language_breakdown"]))
+            self.sentiment_chart = create_sentiment_bar_chart(report_data["overall_sentiment_counts"])
+            self.results_layout.addWidget(self.sentiment_chart)
+            self.language_chart = create_language_bar_chart(report_data["language_breakdown"])
+            self.results_layout.addWidget(self.language_chart)
             self.results_layout.addWidget(QLabel("Top Keywords:"))
             self.results_layout.addWidget(create_keywords_table(report_data["top_keywords"]))
+
+            self.export_pdf_button.setEnabled(True)
         except Exception as e:
             self.results_layout.addWidget(QLabel(f"Error displaying report: {e}"))
 
         self.run_batch_button.setEnabled(True)
+
+    def export_to_pdf(self):
+        if not self.report_path:
+            QMessageBox.warning(self, "Export Error", "Please generate a report first.")
+            return
+
+        sentiment_chart_path = "sentiment_chart.png"
+        language_chart_path = "language_chart.png"
+
+        try:
+            # Export charts to images
+            self.sentiment_chart.grab().save(sentiment_chart_path)
+            self.language_chart.grab().save(language_chart_path)
+
+            pdf_path = generate_pdf_report(self.report_path, sentiment_chart_path, language_chart_path)
+            QMessageBox.information(self, "Export Successful", f"Report successfully exported to:\n{pdf_path}")
+        except Exception as e:
+            QMessageBox.critical(self, "Export Error", f"An error occurred while exporting to PDF:\n{e}")
+        finally:
+            # Clean up temporary image files
+            import os
+            if os.path.exists(sentiment_chart_path):
+                os.remove(sentiment_chart_path)
+            if os.path.exists(language_chart_path):
+                os.remove(language_chart_path)
 
     def on_batch_error(self, message):
         # Clear previous results
