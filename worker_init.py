@@ -16,7 +16,8 @@ def init_worker():
     """
     global global_session, global_tokenizer
 
-    model_dir = "./onnx_model"
+    script_dir = os.path.dirname(os.path.realpath(__file__))
+    model_dir = os.path.join(script_dir, "onnx_model")
     model_path = os.path.join(model_dir, "model_quantized.onnx")
 
     if not os.path.exists(model_path):
